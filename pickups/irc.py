@@ -10,6 +10,7 @@ def make_protocol(server):
             print("Connection received!")
             self.transport = transport
             self.nick = 'default'
+            self.sent_messages = []
 
         def data_received(self, data):
             lines = data.decode('utf-8').split('\r\n')
@@ -29,6 +30,7 @@ def make_protocol(server):
                     server.on_client_list(self)
                 elif line.startswith('PRIVMSG'):
                     channel, message = line.split(' ', 2)[1:]
+                    self.sent_messages.append(message[1:])
                     server.on_client_message(self, channel, message[1:])
 
         def connection_lost(self, exc):
@@ -78,7 +80,10 @@ def make_protocol(server):
 
         def privmsg(self, sender, target, message):
             """Sends the client a message from someone."""
-            self.write(sender, 'PRIVMSG', target, ':{}'.format(message))
+            if message in self.sent_messages and sender == self.nick:
+                self.sent_messages.remove(message)
+            else:
+                self.write(sender, 'PRIVMSG', target, ':{}'.format(message))
 
         def tell_nick(self, nick):
             """Tells the client its actual nick."""
