@@ -9,8 +9,11 @@ def make_protocol(server):
         def connection_made(self, transport):
             print("Connection received!")
             self.transport = transport
-            self.nick = 'default'
+            self.nick = ''
+            self.user = ''
+
             self.sent_messages = []
+            self.has_welcomed = False
 
         def data_received(self, data):
             lines = data.decode('utf-8').split('\r\n')
@@ -23,15 +26,19 @@ def make_protocol(server):
                 if line.startswith('NICK'):
                     self.nick = line.split(' ', 1)[1]
                 elif line.startswith('USER'):
-                    self.swrite(constants.RPL_WELCOME, self.nick,
-                                ':Welcome to pickups!')
-                    server.on_client_connect(self)
+                    self.user = line.split(' ', 1)[1]
                 elif line.startswith('LIST'):
                     server.on_client_list(self)
                 elif line.startswith('PRIVMSG'):
                     channel, message = line.split(' ', 2)[1:]
                     self.sent_messages.append(message[1:])
                     server.on_client_message(self, channel, message[1:])
+
+                if not self.has_welcomed and self.nick and self.user:
+                    self.has_welcomed = True
+                    self.swrite(constants.RPL_WELCOME, self.nick,
+                                ':Welcome to pickups!')
+                    server.on_client_connect(self)
 
         def connection_lost(self, exc):
             print("Connection lost!")
