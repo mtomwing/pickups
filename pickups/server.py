@@ -1,8 +1,10 @@
 import asyncio
 
+from hangups.ui.utils import get_conv_name
 import hangups
 import hangups.auth
 
+from . import util
 from .irc import make_protocol
 
 
@@ -41,14 +43,38 @@ class Server(object):
     def _on_hangups_event(self, conv_event):
         """Called when a hangups conversation event occurs."""
         if isinstance(conv_event, hangups.ChatMessageEvent):
-            print('Event:', conv_event)
+            conv = self._conv_list.get(conv_event.conversation_id)
+            sender = conv.get_user(conv_event.user_id)
+            for client in self.clients:
+                client.privmsg(util.get_nick(sender), util.get_channel(conv),
+                               conv_event.text)
 
     # Client Callbacks
 
     def on_client_connect(self, client):
         """Called when a client connects."""
         self.clients.append(client)
+        client.tell_nick(util.get_nick(self._user_list._self_user))
+
+        for conv in self._conv_list.get_all():
+            channel = util.get_channel(conv)
+            client.join(channel)
+            client.topic(channel, get_conv_name(conv))
+            client.list_nicks(channel,
+                              (util.get_nick(user) for user in conv.users))
 
     def on_client_lost(self, client):
         """Called when a client disconnects."""
         self.clients.remove(client)
+
+    def on_client_list(self, client):
+        """Called when a client requests a list of channels."""
+        info = ((util.get_channel(conv), len(conv.users), get_conv_name(conv))
+                for conv in self._conv_list.get_all())
+        client.list_channels(info)
+
+    def on_client_message(self, client, channel, message):
+        """Called when the client sends a message."""
+        conv = self._conv_list.get(channel.split('-', 1)[1])
+        segments = [hangups.ChatMessageSegment(message)]
+        asyncio.async(conv.send_message(segments))
