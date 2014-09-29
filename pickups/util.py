@@ -6,4 +6,4 @@ def get_channel(conv):
 
 
 def get_nick(user):
-    return re.sub('\W', '_', user.full_name)
+    return re.sub(r'[^\w\[\]\{\}\^`|_\\-]', '_', user.full_name)
