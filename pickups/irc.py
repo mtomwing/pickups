@@ -22,6 +22,8 @@ def make_protocol(server):
                 if line.startswith('NICK'):
                     self.nick = line.split(' ', 1)[1]
                 elif line.startswith('USER'):
+                    self.swrite(constants.RPL_WELCOME, self.nick,
+                                ':Welcome to pickups!')
                     server.on_client_connect(self)
                 elif line.startswith('LIST'):
                     server.on_client_list(self)
