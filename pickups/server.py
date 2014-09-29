@@ -24,6 +24,7 @@ class Server(object):
     def run(self):
         loop = asyncio.get_event_loop()
         asyncio.async(self._server.wait_closed())
+        print('Waiting for hangups to connect...')
         loop.run_until_complete(self._hangups.connect())
 
     # Hangups Callbacks
@@ -39,6 +40,7 @@ class Server(object):
             initial_data.sync_timestamp
         )
         self._conv_list.on_event.add_observer(self._on_hangups_event)
+        print('Hangups connected. Connect your IRC clients!')
 
     def _on_hangups_event(self, conv_event):
         """Called when a hangups conversation event occurs."""
