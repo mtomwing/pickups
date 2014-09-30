@@ -1,30 +1,28 @@
 import asyncio
+import logging
 
-from hangups.ui.utils import get_conv_name
+from hangups.ui.utils import get_conv_name as get_topic
 import hangups
 import hangups.auth
 
-from . import util
-from .irc import make_protocol
+from . import irc, util
+
+logger = logging.getLogger(__name__)
 
 
 class Server(object):
 
     def __init__(self, host='localhost', port='6667', cookies=None):
-        Protocol = make_protocol(self)
-        self.clients = []
-
-        loop = asyncio.get_event_loop()
-        self._server = loop.run_until_complete(
-            loop.create_server(Protocol, host, port))
-
+        self.clients = {}
         self._hangups = hangups.Client(cookies)
         self._hangups.on_connect.add_observer(self._on_hangups_connect)
 
-    def run(self):
+    def run(self, host, port):
         loop = asyncio.get_event_loop()
-        asyncio.async(self._server.wait_closed())
-        print('Waiting for hangups to connect...')
+        loop.run_until_complete(
+            asyncio.start_server(self._on_client_connect, host=host, port=port)
+        )
+        logger.info('Waiting for hangups to connect...')
         loop.run_until_complete(self._hangups.connect())
 
     # Hangups Callbacks
@@ -40,43 +38,76 @@ class Server(object):
             initial_data.sync_timestamp
         )
         self._conv_list.on_event.add_observer(self._on_hangups_event)
-        print('Hangups connected. Connect your IRC clients!')
+        logger.info('Hangups connected. Connect your IRC clients!')
 
     def _on_hangups_event(self, conv_event):
         """Called when a hangups conversation event occurs."""
         if isinstance(conv_event, hangups.ChatMessageEvent):
             conv = self._conv_list.get(conv_event.conversation_id)
-            sender = conv.get_user(conv_event.user_id)
-            for client in self.clients:
-                client.privmsg(util.get_nick(sender), util.get_channel(conv),
-                               conv_event.text)
+            sender = util.get_nick(conv.get_user(conv_event.user_id))
+            message = conv_event.text
+            for client in self.clients.values():
+                if message in client.sent_messages and sender == client.nickname:
+                    client.sent_messages.remove(message)
+                else:
+                    client.privmsg(util.get_nick(sender),
+                                   util.get_channel(conv),
+                                   conv_event.text)
 
     # Client Callbacks
 
-    def on_client_connect(self, client):
-        """Called when a client connects."""
-        self.clients.append(client)
-        client.tell_nick(util.get_nick(self._user_list._self_user))
+    def _on_client_connect(self, client_reader, client_writer):
+        """Called when an IRC client connects."""
+        client = irc.Client(client_reader, client_writer)
+        task = asyncio.Task(self._handle_client(client))
+        self.clients[task] = client
+        logger.info("New Connection")
+        task.add_done_callback(self._on_client_lost)
 
-        for conv in self._conv_list.get_all():
-            channel = util.get_channel(conv)
-            client.join(channel)
-            client.topic(channel, get_conv_name(conv))
-            client.list_nicks(channel,
-                              (util.get_nick(user) for user in conv.users))
+    def _on_client_lost(self, task):
+        """Called when an IRC client disconnects."""
+        self.clients[task].writer.close()
+        del self.clients[task]
+        logger.info("End Connection")
 
-    def on_client_lost(self, client):
-        """Called when a client disconnects."""
-        self.clients.remove(client)
+    @asyncio.coroutine
+    def _handle_client(self, client):
+        username = None
+        welcomed = False
 
-    def on_client_list(self, client):
-        """Called when a client requests a list of channels."""
-        info = ((util.get_channel(conv), len(conv.users), get_conv_name(conv))
-                for conv in self._conv_list.get_all())
-        client.list_channels(info)
+        while True:
+            line = yield from client.readline()
+            line = line.decode('utf-8').strip('\r\n')
 
-    def on_client_message(self, client, channel, message):
-        """Called when the client sends a message."""
-        conv = self._conv_list.get(channel.split('-', 1)[1])
-        segments = [hangups.ChatMessageSegment(message)]
-        asyncio.async(conv.send_message(segments))
+            if not line:
+                logger.info("Connection lost")
+                break
+            logger.info('Received: %r', line)
+
+            if line.startswith('NICK'):
+                client.nickname = line.split(' ', 1)[1]
+            elif line.startswith('USER'):
+                username = line.split(' ', 1)[1]
+            elif line.startswith('LIST'):
+                info = (
+                    (util.get_channel(conv), len(conv.users), get_topic(conv))
+                    for conv in self._conv_list.get_all()
+                )
+                client.list_channels(info)
+            elif line.startswith('PRIVMSG'):
+                channel, message = line.split(' ', 2)[1:]
+                conv = self._conv_list.get(channel.split('-', 1)[1])
+                client.sent_messages.append(message[1:])
+                segments = [hangups.ChatMessageSegment(message[1:])]
+                asyncio.async(conv.send_message(segments))
+
+            if not welcomed and client.nickname and username:
+                welcomed = True
+                client.swrite(irc.RPL_WELCOME, ':Welcome to pickups!')
+                client.tell_nick(util.get_nick(self._user_list._self_user))
+                for conv in self._conv_list.get_all():
+                    channel = util.get_channel(conv)
+                    client.join(channel)
+                    client.topic(channel, get_topic(conv))
+                    client.list_nicks(channel,
+                                      (util.get_nick(user) for user in conv.users))

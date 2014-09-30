@@ -1,100 +1,78 @@
-import asyncio
+import logging
 
-from . import constants
+RPL_WELCOME = 1
+RPL_WHOISUSER = 311
+RPL_LISTSTART = 321
+RPL_LIST = 322
+RPL_LISTEND = 323
+RPL_TOPIC = 332
+RPL_NAMREPLY = 353
+RPL_ENDOFNAMES = 366
+
+logger = logging.getLogger(__name__)
 
 
-def make_protocol(server):
-    class IRCProtocol(asyncio.Protocol):
+class Client(object):
 
-        def connection_made(self, transport):
-            print("Connection received!")
-            self.transport = transport
-            self.nick = ''
-            self.user = ''
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
 
-            self.sent_messages = []
-            self.has_welcomed = False
+        self.nickname = None
+        self.sent_messages = []
 
-        def data_received(self, data):
-            lines = data.decode('utf-8').split('\r\n')
-            for line in lines:
-                line.strip()
-                if not line:
-                    continue
+    def readline(self):
+        return self.reader.readline()
 
-                print('Received:', repr(line))
-                if line.startswith('NICK'):
-                    self.nick = line.split(' ', 1)[1]
-                elif line.startswith('USER'):
-                    self.user = line.split(' ', 1)[1]
-                elif line.startswith('LIST'):
-                    server.on_client_list(self)
-                elif line.startswith('PRIVMSG'):
-                    channel, message = line.split(' ', 2)[1:]
-                    self.sent_messages.append(message[1:])
-                    server.on_client_message(self, channel, message[1:])
+    def write(self, sender, command, *args):
+        """Sends a message to the client on behalf of another client."""
+        if not isinstance(command, str):
+            command = '{:03}'.format(command)
+        params = ' '.join('{}'.format(arg) for arg in args)
+        line = ':{} {} {}\r\n'.format(sender, command, params)
+        logger.info('Sent: %r', line)
+        self.writer.write(line.encode('utf-8'))
 
-                if not self.has_welcomed and self.nick and self.user:
-                    self.has_welcomed = True
-                    self.swrite(constants.RPL_WELCOME, self.nick,
-                                ':Welcome to pickups!')
-                    server.on_client_connect(self)
+    def swrite(self, command, *args):
+        """Sends a message from the server to the client."""
+        self.write('pickups', command, self.nickname, *args)
 
-        def connection_lost(self, exc):
-            print("Connection lost!")
-            server.on_client_lost(self)
+    def uwrite(self, command, *args):
+        """Sends a message on behalf of the client."""
+        self.write(self.nickname, command, *args)
 
-        def write(self, sender, command, *args):
-            """Sends a message to the client on behalf of another client."""
-            params = ' '.join('{}'.format(arg) for arg in args)
-            line = ':{} {} {}\r\n'.format(sender, command, params)
-            print('Sent:', repr(line))
-            self.transport.write(line.encode('utf-8'))
+    # IRC Stuff
 
-        def swrite(self, command, *args):
-            """Sends a message from the server to the client."""
-            self.write('pickups', command, *args)
+    def welcome(self):
+        self.swrite(constants.RPL_WELCOME, self.nickname,
+                    ':Welcome to pickups!')
 
-        def uwrite(self, command, *args):
-            """Sends a message on behalf of the client."""
-            self.write(self.nick, command, *args)
+    def list_channels(self, info):
+        """Tells the client what channels are available."""
+        self.swrite(RPL_LISTSTART)
+        for channel, num_users, topic in info:
+            self.swrite(RPL_LIST, channel, num_users, ':{}'.format(topic))
+        self.swrite(RPL_LISTEND, ':End of /LIST')
 
-        # IRC Stuff
+    def join(self, channel):
+        """Tells the client to join a channel."""
+        self.write(self.nickname, 'JOIN', ':{}'.format(channel))
 
-        def list_channels(self, info):
-            """Tells the client what channels are available."""
-            self.swrite(constants.RPL_LISTSTART, self.nick)
-            for channel, num_users, topic in info:
-                self.swrite(constants.RPL_LIST, self.nick,
-                            channel, num_users, ':{}'.format(topic))
-            self.swrite(constants.RPL_LISTEND, self.nick, ':End of /LIST')
+    def list_nicks(self, channel, nicks):
+        """Tells the client what nicks are in channel."""
+        for nick in nicks:
+            self.swrite(RPL_NAMREPLY, '@', channel, ':{}'.format(nick))
+        self.swrite(RPL_ENDOFNAMES, ':End of /NAMES')
 
-        def join(self, channel):
-            """Tells the client to join a channel."""
-            self.write(self.nick, 'JOIN', ':{}'.format(channel))
+    def topic(self, channel, topic):
+        """Tells the client the topic of the channel."""
+        self.swrite(RPL_TOPIC, channel, ':{}'.format(topic))
 
-        def list_nicks(self, channel, nicks):
-            """Tells the client what nicks are in channel."""
-            for nick in nicks:
-                self.swrite(constants.RPL_NAMREPLY, self.nick, '@', channel,
-                            ':{}'.format(nick))
-            self.swrite(constants.RPL_ENDOFNAMES, self.nick, ':End of /NAMES')
+    def privmsg(self, sender, target, message):
+        """Sends the client a message from someone."""
+        self.write(sender, 'PRIVMSG', target, ':{}'.format(message))
 
-        def topic(self, channel, topic):
-            """Tells the client the topic of the channel."""
-            self.swrite(constants.RPL_TOPIC, self.nick, channel,
-                        ':{}'.format(topic))
-
-        def privmsg(self, sender, target, message):
-            """Sends the client a message from someone."""
-            if message in self.sent_messages and sender == self.nick:
-                self.sent_messages.remove(message)
-            else:
-                self.write(sender, 'PRIVMSG', target, ':{}'.format(message))
-
-        def tell_nick(self, nick):
-            """Tells the client its actual nick."""
-            self.uwrite('NICK', nick)
-            self.nick = nick
-
-    return IRCProtocol
+    def tell_nick(self, nickname):
+        """Tells the client its actual nick."""
+        self.uwrite('NICK', nickname)
+        self.nickname = nickname
