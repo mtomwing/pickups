@@ -45,14 +45,13 @@ class Server(object):
         if isinstance(conv_event, hangups.ChatMessageEvent):
             conv = self._conv_list.get(conv_event.conversation_id)
             sender = util.get_nick(conv.get_user(conv_event.user_id))
+            channel = util.get_channel(conv)
             message = conv_event.text
             for client in self.clients.values():
                 if message in client.sent_messages and sender == client.nickname:
                     client.sent_messages.remove(message)
                 else:
-                    client.privmsg(util.get_nick(sender),
-                                   util.get_channel(conv),
-                                   conv_event.text)
+                    client.privmsg(sender, channel, conv_event.text)
 
     # Client Callbacks
 
