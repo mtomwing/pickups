@@ -6,4 +6,5 @@ def get_channel(conv):
 
 
 def get_nick(user):
-    return re.sub(r'[^\w\[\]\{\}\^`|_\\-]', '_', user.full_name)
+    # Remove disallowed characters and limit to max length 15
+    return re.sub(r'[^\w\[\]\{\}\^`|_\\-]', '', user.full_name)[:15]

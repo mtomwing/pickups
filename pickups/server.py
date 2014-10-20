@@ -99,6 +99,29 @@ class Server(object):
                 client.sent_messages.append(message[1:])
                 segments = [hangups.ChatMessageSegment(message[1:])]
                 asyncio.async(conv.send_message(segments))
+            elif line.startswith('JOIN'):
+                channel = line.split(' ')[1]
+                conv = self._conv_list.get(channel.split('-', 1)[1])
+                # If a JOIN is successful, the user receives a JOIN message as
+                # confirmation and is then sent the channel's topic (using
+                # RPL_TOPIC) and the list of users who are on the channel (using
+                # RPL_NAMREPLY), which MUST include the user joining.
+                client.write(util.get_nick(self._user_list._self_user),
+                             'JOIN', channel)
+                client.topic(channel, get_topic(conv))
+                client.list_nicks(channel,
+                                  (util.get_nick(user) for user in conv.users))
+            elif line.startswith('WHO'):
+                query = line.split(' ')[1]
+                if query.startswith('#'):
+                    conv = self._conv_list.get(query.split('-', 1)[1])
+                    responses = [{
+                        'channel': query,
+                        'user': util.get_nick(user),
+                        'nick': util.get_nick(user),
+                        'real_name': user.full_name,
+                    } for user in conv.users]
+                    client.who(query, responses)
 
             if not welcomed and client.nickname and username:
                 welcomed = True
@@ -106,13 +129,7 @@ class Server(object):
                 client.tell_nick(util.get_nick(self._user_list._self_user))
 
                 # Sending the MOTD seems be required for Pidgin to connect.
-                client.swrite(375, ':- pickups Message of the Day - ')
-                client.swrite(372, ':- insert MOTD here')
-                client.swrite(376, ':End of MOTD command')
-
-                for conv in self._conv_list.get_all():
-                    channel = util.get_channel(conv)
-                    client.join(channel)
-                    client.topic(channel, get_topic(conv))
-                    client.list_nicks(channel,
-                                      (util.get_nick(user) for user in conv.users))
+                client.swrite(irc.RPL_MOTDSTART,
+                              ':- pickups Message of the Day - ')
+                client.swrite(irc.RPL_MOTD, ':- insert MOTD here')
+                client.swrite(irc.RPL_ENDOFMOTD, ':End of MOTD command')
