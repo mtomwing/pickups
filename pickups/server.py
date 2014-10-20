@@ -104,6 +104,12 @@ class Server(object):
                 welcomed = True
                 client.swrite(irc.RPL_WELCOME, ':Welcome to pickups!')
                 client.tell_nick(util.get_nick(self._user_list._self_user))
+
+                # Sending the MOTD seems be required for Pidgin to connect.
+                client.swrite(375, ':- pickups Message of the Day - ')
+                client.swrite(372, ':- insert MOTD here')
+                client.swrite(376, ':End of MOTD command')
+
                 for conv in self._conv_list.get_all():
                     channel = util.get_channel(conv)
                     client.join(channel)
