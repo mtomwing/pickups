@@ -2,12 +2,18 @@ import logging
 
 RPL_WELCOME = 1
 RPL_WHOISUSER = 311
+RPL_ENDOFWHO = 315
 RPL_LISTSTART = 321
 RPL_LIST = 322
 RPL_LISTEND = 323
 RPL_TOPIC = 332
+RPL_WHOREPLY = 352
 RPL_NAMREPLY = 353
 RPL_ENDOFNAMES = 366
+RPL_MOTD = 372
+RPL_MOTDSTART = 375
+RPL_ENDOFMOTD = 376
+
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +50,8 @@ class Client(object):
     # IRC Stuff
 
     def welcome(self):
-        self.swrite(constants.RPL_WELCOME, self.nickname,
-                    ':Welcome to pickups!')
+        """Tells the client a welcome message."""
+        self.swrite(RPL_WELCOME, self.nickname, ':Welcome to pickups!')
 
     def list_channels(self, info):
         """Tells the client what channels are available."""
@@ -60,9 +66,18 @@ class Client(object):
 
     def list_nicks(self, channel, nicks):
         """Tells the client what nicks are in channel."""
-        for nick in nicks:
-            self.swrite(RPL_NAMREPLY, '@', channel, ':{}'.format(nick))
-        self.swrite(RPL_ENDOFNAMES, ':End of /NAMES')
+        self.swrite(RPL_NAMREPLY, '=', channel, ':{}'.format(' '.join(nicks)))
+        self.swrite(RPL_ENDOFNAMES, channel, ':End of NAMES list')
+
+    def who(self, query, responses):
+        """Tells the client a list of information matching a query."""
+        for response in responses:
+            self.swrite(
+                RPL_WHOREPLY, response['channel'],
+                '~{}'.format(response['user']), 'localhost', 'pickups',
+                response['nick'], 'H', ':0', response['real_name']
+            )
+        self.swrite(RPL_ENDOFWHO, query, ':End of WHO list')
 
     def topic(self, channel, topic):
         """Tells the client the topic of the channel."""

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 
-from hangups.ui.utils import get_conv_name as get_topic
 import hangups
 import hangups.auth
 
@@ -45,7 +44,7 @@ class Server(object):
         if isinstance(conv_event, hangups.ChatMessageEvent):
             conv = self._conv_list.get(conv_event.conversation_id)
             sender = util.get_nick(conv.get_user(conv_event.user_id))
-            channel = util.get_channel(conv)
+            channel = util.conversation_to_channel(conv)
             message = conv_event.text
             for client in self.clients.values():
                 if message in client.sent_messages and sender == client.nickname:
@@ -89,24 +88,48 @@ class Server(object):
                 username = line.split(' ', 1)[1]
             elif line.startswith('LIST'):
                 info = (
-                    (util.get_channel(conv), len(conv.users), get_topic(conv))
-                    for conv in self._conv_list.get_all()
+                    (util.conversation_to_channel(conv), len(conv.users),
+                     util.get_topic(conv)) for conv in self._conv_list.get_all()
                 )
                 client.list_channels(info)
             elif line.startswith('PRIVMSG'):
                 channel, message = line.split(' ', 2)[1:]
-                conv = self._conv_list.get(channel.split('-', 1)[1])
+                conv = util.channel_to_conversation(channel, self._conv_list)
                 client.sent_messages.append(message[1:])
                 segments = [hangups.ChatMessageSegment(message[1:])]
                 asyncio.async(conv.send_message(segments))
+            elif line.startswith('JOIN'):
+                channel = line.split(' ')[1]
+                conv = util.channel_to_conversation(channel, self._conv_list)
+                # If a JOIN is successful, the user receives a JOIN message as
+                # confirmation and is then sent the channel's topic (using
+                # RPL_TOPIC) and the list of users who are on the channel (using
+                # RPL_NAMREPLY), which MUST include the user joining.
+                client.write(util.get_nick(self._user_list._self_user),
+                             'JOIN', channel)
+                client.topic(channel, util.get_topic(conv))
+                client.list_nicks(channel,
+                                  (util.get_nick(user) for user in conv.users))
+            elif line.startswith('WHO'):
+                query = line.split(' ')[1]
+                if query.startswith('#'):
+                    conv = util.channel_to_conversation(channel,
+                                                         self._conv_list)
+                    responses = [{
+                        'channel': query,
+                        'user': util.get_nick(user),
+                        'nick': util.get_nick(user),
+                        'real_name': user.full_name,
+                    } for user in conv.users]
+                    client.who(query, responses)
 
             if not welcomed and client.nickname and username:
                 welcomed = True
                 client.swrite(irc.RPL_WELCOME, ':Welcome to pickups!')
                 client.tell_nick(util.get_nick(self._user_list._self_user))
-                for conv in self._conv_list.get_all():
-                    channel = util.get_channel(conv)
-                    client.join(channel)
-                    client.topic(channel, get_topic(conv))
-                    client.list_nicks(channel,
-                                      (util.get_nick(user) for user in conv.users))
+
+                # Sending the MOTD seems be required for Pidgin to connect.
+                client.swrite(irc.RPL_MOTDSTART,
+                              ':- pickups Message of the Day - ')
+                client.swrite(irc.RPL_MOTD, ':- insert MOTD here')
+                client.swrite(irc.RPL_ENDOFMOTD, ':End of MOTD command')
