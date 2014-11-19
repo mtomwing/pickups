@@ -93,3 +93,7 @@ class Client(object):
         """Tells the client its actual nick."""
         self.uwrite('NICK', nickname)
         self.nickname = nickname
+
+    def pong(self):
+        """Replies to server pings."""
+        self.swrite('PONG', 'localhost')

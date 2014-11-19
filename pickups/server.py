@@ -124,6 +124,8 @@ class Server(object):
                         'real_name': user.full_name,
                     } for user in conv.users]
                     client.who(query, responses)
+            elif line.startswith('PING'):
+                client.pong()
 
             if not welcomed and client.nickname and username:
                 welcomed = True
