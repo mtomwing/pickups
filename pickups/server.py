@@ -98,7 +98,7 @@ class Server(object):
                 channel, message = line.split(' ', 2)[1:]
                 conv = util.channel_to_conversation(channel, self._conv_list)
                 client.sent_messages.append(message[1:])
-                segments = [hangups.ChatMessageSegment(message[1:])]
+                segments = hangups.ChatMessageSegment.from_str(message[1:])
                 asyncio.async(conv.send_message(segments))
             elif line.startswith('JOIN'):
                 channel = line.split(' ')[1]
