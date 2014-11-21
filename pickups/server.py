@@ -43,14 +43,16 @@ class Server(object):
         """Called when a hangups conversation event occurs."""
         if isinstance(conv_event, hangups.ChatMessageEvent):
             conv = self._conv_list.get(conv_event.conversation_id)
-            sender = util.get_nick(conv.get_user(conv_event.user_id))
+            user = conv.get_user(conv_event.user_id)
+            sender = util.get_nick(user)
+            hostmask = util.get_hostmask(user)
             channel = util.conversation_to_channel(conv)
             message = conv_event.text
             for client in self.clients.values():
                 if message in client.sent_messages and sender == client.nickname:
                     client.sent_messages.remove(message)
                 else:
-                    client.privmsg(sender, channel, conv_event.text)
+                    client.privmsg(hostmask, channel, conv_event.text)
 
     # Client Callbacks
 
@@ -96,7 +98,7 @@ class Server(object):
                 channel, message = line.split(' ', 2)[1:]
                 conv = util.channel_to_conversation(channel, self._conv_list)
                 client.sent_messages.append(message[1:])
-                segments = [hangups.ChatMessageSegment(message[1:])]
+                segments = hangups.ChatMessageSegment.from_str(message[1:])
                 asyncio.async(conv.send_message(segments))
             elif line.startswith('JOIN'):
                 channel = line.split(' ')[1]
@@ -122,6 +124,8 @@ class Server(object):
                         'real_name': user.full_name,
                     } for user in conv.users]
                     client.who(query, responses)
+            elif line.startswith('PING'):
+                client.pong()
 
             if not welcomed and client.nickname and username:
                 welcomed = True

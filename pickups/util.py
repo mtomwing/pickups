@@ -29,6 +29,11 @@ def get_nick(user):
     return re.sub(r'[^\w\[\]\{\}\^`|_\\-]', '', user.full_name)[:15]
 
 
+def get_hostmask(user):
+    """Return hostmask for a hangups.User."""
+    return '{}!{}@hangouts'.format(get_nick(user), user.id_.chat_id)
+
+
 def get_topic(conv):
     """Return IRC topic for a conversation."""
     return 'Hangouts conversation: {}'.format(get_conv_name(conv))

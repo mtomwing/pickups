@@ -83,11 +83,17 @@ class Client(object):
         """Tells the client the topic of the channel."""
         self.swrite(RPL_TOPIC, channel, ':{}'.format(topic))
 
-    def privmsg(self, sender, target, message):
+    def privmsg(self, hostmask, target, message):
         """Sends the client a message from someone."""
-        self.write(sender, 'PRIVMSG', target, ':{}'.format(message))
+        for line in message.splitlines():
+            if line:
+                self.write(hostmask, 'PRIVMSG', target, ':{}'.format(line))
 
     def tell_nick(self, nickname):
         """Tells the client its actual nick."""
         self.uwrite('NICK', nickname)
         self.nickname = nickname
+
+    def pong(self):
+        """Replies to server pings."""
+        self.swrite('PONG', 'localhost')
