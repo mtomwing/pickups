@@ -105,27 +105,36 @@ class Server(object):
             elif line.startswith('JOIN'):
                 channel = line.split(' ')[1]
                 conv = util.channel_to_conversation(channel, self._conv_list)
-                # If a JOIN is successful, the user receives a JOIN message as
-                # confirmation and is then sent the channel's topic (using
-                # RPL_TOPIC) and the list of users who are on the channel (using
-                # RPL_NAMREPLY), which MUST include the user joining.
-                client.write(util.get_nick(self._user_list._self_user),
-                             'JOIN', channel)
-                client.topic(channel, util.get_topic(conv))
-                client.list_nicks(channel,
-                                  (util.get_nick(user) for user in conv.users))
+                if not conv:
+                    client.swrite(irc.ERR_NOSUCHCHANNEL,
+                            ':{}: Channel not found'.format(channel))
+                else:
+                    # If a JOIN is successful, the user receives a JOIN message
+                    # as confirmation and is then sent the channel's topic
+                    # (using RPL_TOPIC) and the list of users who are on the
+                    # channel (using RPL_NAMREPLY), which MUST include the user
+                    # joining.
+                    client.write(util.get_nick(self._user_list._self_user),
+                                 'JOIN', channel)
+                    client.topic(channel, util.get_topic(conv))
+                    client.list_nicks(channel, (util.get_nick(user)
+                                                for user in conv.users))
             elif line.startswith('WHO'):
                 query = line.split(' ')[1]
                 if query.startswith('#'):
                     conv = util.channel_to_conversation(channel,
                                                          self._conv_list)
-                    responses = [{
-                        'channel': query,
-                        'user': util.get_nick(user),
-                        'nick': util.get_nick(user),
-                        'real_name': user.full_name,
-                    } for user in conv.users]
-                    client.who(query, responses)
+                    if not conv:
+                        client.swrite(irc.ERR_NOSUCHCHANNEL,
+                                ':{}: Channel not found'.format(channel))
+                    else:
+                        responses = [{
+                            'channel': query,
+                            'user': util.get_nick(user),
+                            'nick': util.get_nick(user),
+                            'real_name': user.full_name,
+                        } for user in conv.users]
+                        client.who(query, responses)
             elif line.startswith('PING'):
                 client.pong()
 
