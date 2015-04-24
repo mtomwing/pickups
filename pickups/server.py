@@ -91,7 +91,9 @@ class Server(object):
             elif line.startswith('LIST'):
                 info = (
                     (util.conversation_to_channel(conv), len(conv.users),
-                     util.get_topic(conv)) for conv in self._conv_list.get_all()
+                     util.get_topic(conv))
+                    for conv in sorted(self._conv_list.get_all(),
+                                       key=lambda x: len(x.users))
                 )
                 client.list_channels(info)
             elif line.startswith('PRIVMSG'):
