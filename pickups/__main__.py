@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import sys
@@ -13,4 +14,10 @@ if __name__ == '__main__':
     dirs = appdirs.AppDirs('hangups', 'hangups')
     default_cookies_path = os.path.join(dirs.user_cache_dir, 'cookies.json')
     cookies = hangups.auth.get_auth_stdin(default_cookies_path)
-    Server(cookies=cookies).run('localhost', 6667)
+
+    parser = argparse.ArgumentParser(description='IRC Gateway for Hangouts')
+    parser.add_argument('--address', help='bind address', default='127.0.0.1')
+    parser.add_argument('--port', help='bind port', default=6667)
+    args = parser.parse_args()
+
+    Server(cookies=cookies).run(args.address, args.port)
