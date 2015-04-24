@@ -3,8 +3,14 @@
 from hangups.ui.utils import get_conv_name
 import hashlib
 import re
+import unicodedata
 
 CONV_HASH_LEN = 7
+
+
+def strip_non_printable(s):
+    return ''.join(c for c in s
+                   if unicodedata.category(c) not in ['Cc', 'Zs', 'So'])
 
 
 def conversation_to_channel(conv):
@@ -12,6 +18,7 @@ def conversation_to_channel(conv):
     # Must be 50 characters max and not contain space or comma.
     conv_hash = hashlib.sha1(conv.id_.encode()).hexdigest()
     name = get_conv_name(conv).replace(',', '_').replace(' ', '')
+    name = strip_non_printable(name)
     return '#{}[{}]'.format(name[:50 - CONV_HASH_LEN - 3],
                             conv_hash[:CONV_HASH_LEN])
 
