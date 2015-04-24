@@ -18,7 +18,7 @@ def conversation_to_channel(conv):
 
 def channel_to_conversation(channel, conv_list):
     """Return hangups.Conversation for channel name."""
-    conv_hash = re.match(r'^.*\[([a-f0-9]+)\]$', channel).group(1)
+    conv_hash = re.search(r'\[([a-f0-9]+)\]$', channel).group(1)
     return {hashlib.sha1(conv.id_.encode()).hexdigest()[:CONV_HASH_LEN]: conv
             for conv in conv_list.get_all()}[conv_hash]
 
