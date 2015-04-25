@@ -9,12 +9,13 @@ from . import irc, util
 logger = logging.getLogger(__name__)
 
 
-class Server(object):
+class Server:
 
-    def __init__(self, host='localhost', port='6667', cookies=None):
+    def __init__(self, cookies=None, ascii_smileys=False):
         self.clients = {}
         self._hangups = hangups.Client(cookies)
         self._hangups.on_connect.add_observer(self._on_hangups_connect)
+        self.ascii_smileys = ascii_smileys
 
     def run(self, host, port):
         loop = asyncio.get_event_loop()
@@ -52,7 +53,9 @@ class Server(object):
                 if message in client.sent_messages and sender == client.nickname:
                     client.sent_messages.remove(message)
                 else:
-                    client.privmsg(hostmask, channel, conv_event.text)
+                    if self.ascii_smileys:
+                        message = util.smileys_to_ascii(message)
+                    client.privmsg(hostmask, channel, message)
 
     # Client Callbacks
 
@@ -91,7 +94,9 @@ class Server(object):
             elif line.startswith('LIST'):
                 info = (
                     (util.conversation_to_channel(conv), len(conv.users),
-                     util.get_topic(conv)) for conv in self._conv_list.get_all()
+                     util.get_topic(conv))
+                    for conv in sorted(self._conv_list.get_all(),
+                                       key=lambda x: len(x.users))
                 )
                 client.list_channels(info)
             elif line.startswith('PRIVMSG'):
@@ -103,27 +108,36 @@ class Server(object):
             elif line.startswith('JOIN'):
                 channel = line.split(' ')[1]
                 conv = util.channel_to_conversation(channel, self._conv_list)
-                # If a JOIN is successful, the user receives a JOIN message as
-                # confirmation and is then sent the channel's topic (using
-                # RPL_TOPIC) and the list of users who are on the channel (using
-                # RPL_NAMREPLY), which MUST include the user joining.
-                client.write(util.get_nick(self._user_list._self_user),
-                             'JOIN', channel)
-                client.topic(channel, util.get_topic(conv))
-                client.list_nicks(channel,
-                                  (util.get_nick(user) for user in conv.users))
+                if not conv:
+                    client.swrite(irc.ERR_NOSUCHCHANNEL,
+                            ':{}: Channel not found'.format(channel))
+                else:
+                    # If a JOIN is successful, the user receives a JOIN message
+                    # as confirmation and is then sent the channel's topic
+                    # (using RPL_TOPIC) and the list of users who are on the
+                    # channel (using RPL_NAMREPLY), which MUST include the user
+                    # joining.
+                    client.write(util.get_nick(self._user_list._self_user),
+                                 'JOIN', channel)
+                    client.topic(channel, util.get_topic(conv))
+                    client.list_nicks(channel, (util.get_nick(user)
+                                                for user in conv.users))
             elif line.startswith('WHO'):
                 query = line.split(' ')[1]
                 if query.startswith('#'):
                     conv = util.channel_to_conversation(channel,
                                                          self._conv_list)
-                    responses = [{
-                        'channel': query,
-                        'user': util.get_nick(user),
-                        'nick': util.get_nick(user),
-                        'real_name': user.full_name,
-                    } for user in conv.users]
-                    client.who(query, responses)
+                    if not conv:
+                        client.swrite(irc.ERR_NOSUCHCHANNEL,
+                                ':{}: Channel not found'.format(channel))
+                    else:
+                        responses = [{
+                            'channel': query,
+                            'user': util.get_nick(user),
+                            'nick': util.get_nick(user),
+                            'real_name': user.full_name,
+                        } for user in conv.users]
+                        client.who(query, responses)
             elif line.startswith('PING'):
                 client.pong()
 
