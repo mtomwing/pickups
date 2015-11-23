@@ -1,1 +1,1 @@
-hangups==0.2
+hangups<0.4
